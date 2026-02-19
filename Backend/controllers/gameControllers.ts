@@ -1,168 +1,290 @@
 import { Socket, Server } from "socket.io";
-import { availableColors, colorSets, haltIndexes, placeHolders, rooms, startingIndexes } from "../utils/gameSet";
-import { PlayerColor, PlayerData, Positions } from "../utils/type";
+import { availableColors, haltIndexes, rooms, startingIndexes, getActualPathIndex } from "../utils/gameSet";
+import { PlayerColor, PlayerData, GameLog } from "../utils/type";
 
-export const roomCreation = (socket: Socket , io: Server) => (roomId: string) => {
-    if(!roomId) return console.log("No room Id", roomId)
-    if (!rooms[roomId]) 
-      rooms[roomId] = {
-        players: [],
-        gameStarted: false,
-        turn: null,
-        DiceValues: null,
-      };
+const TURN_DURATION_MS = 15000; // 15 seconds
 
-    const room = rooms[roomId];
-    const playersInRoom = room.players;
-    console.log("Player in room", playersInRoom);
-    const currentCount = playersInRoom.length;
-  
-    if (currentCount >= 2) {
-      socket.emit('room-full');
+/**
+ * Utility: Add a system message to the room logs
+ */
+function addLog(roomId: string, message: string, color: PlayerColor | "system") {
+  if (!rooms[roomId]) return;
+  const log: GameLog = { message, color: (color === "system" ? "white" : color) as PlayerColor | "white", timestamp: Date.now() };
+  rooms[roomId].logs.unshift(log);
+  if (rooms[roomId].logs.length > 50) rooms[roomId].logs.pop();
+}
+
+/**
+ * Utility: Advance the turn to the next player in the rotation
+ */
+function nextTurn(roomId: string, io: Server) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  const currentColor = room.turn;
+  const players = room.players;
+  const currentIndex = players.findIndex(p => p.color === currentColor);
+  const nextIndex = (currentIndex + 1) % players.length;
+  const nextColor = players[nextIndex].color;
+
+  room.turn = nextColor;
+  room.diceValue = null;
+  room.sixCount = 0; // Reset consecutive sixes on turn change
+
+  startTimer(roomId, io);
+
+  io.to(roomId).emit('update-turn', nextColor);
+  io.to(roomId).emit('room-data', {
+    players: room.players,
+    turn: room.turn,
+    logs: room.logs,
+    positions: room.positions
+  });
+}
+
+/**
+ * Utility: Handles the 15s turn countdown
+ */
+function startTimer(roomId: string, io: Server) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  if (room.turnTimeout) clearTimeout(room.turnTimeout);
+
+  room.timerStart = Date.now();
+
+  io.to(roomId).emit('timer-sync', {
+    timeLeft: TURN_DURATION_MS,
+    totalTime: TURN_DURATION_MS
+  });
+
+  room.turnTimeout = setTimeout(() => {
+    if (room.turn && !room.winner) {
+      addLog(roomId, `Time out for ${room.turn}`, room.turn as PlayerColor);
+      nextTurn(roomId, io);
+    }
+  }, TURN_DURATION_MS);
+}
+
+// --- Controller Functions ---
+
+/**
+ * Handles Room Joining and Initialization
+ */
+export const roomCreation = (socket: Socket, io: Server) => (roomId: string) => {
+  if (!roomId) return;
+
+  if (!rooms[roomId]) {
+    rooms[roomId] = {
+      players: [],
+      gameStarted: false,
+      turn: null,
+      diceValue: null,
+      sixCount: 0,
+      positions: {
+        red: [-1, -1, -1, -1],
+        green: [-1, -1, -1, -1],
+        yellow: [-1, -1, -1, -1],
+        blue: [-1, -1, -1, -1]
+      },
+      logs: [],
+      winner: null,
+      placeHolders: new Array(52).fill('')
+    };
+  }
+
+  const room = rooms[roomId];
+  if (room.players.length >= 4) {
+    socket.emit('room-full');
+    return;
+  }
+
+  const existingPlayer = room.players.find(p => p.id === socket.id);
+  if (existingPlayer) {
+    socket.join(roomId);
+    socket.emit('room-data', {
+      players: room.players,
+      turn: room.turn,
+      playerColor: existingPlayer.color,
+      logs: room.logs,
+      positions: room.positions
+    });
+    return;
+  }
+
+  // Assign Color (Prefer opposite colors for 2-player: Red vs Yellow or Blue vs Green)
+  const usedColors = new Set(room.players.map(p => p.color));
+  let colorToAssign = availableColors.find(c => !usedColors.has(c));
+
+  if (!colorToAssign) return;
+
+  const player: PlayerData = { id: socket.id, color: colorToAssign };
+  room.players.push(player);
+  socket.join(roomId);
+
+  addLog(roomId, `${colorToAssign} Joined the Arena`, colorToAssign);
+
+  // Sync state to all
+  io.to(roomId).emit('room-data', {
+    players: room.players,
+    turn: room.turn,
+    logs: room.logs,
+    positions: room.positions
+  });
+
+  // START MATCH: Triggers when 2 players have joined
+  if (room.players.length === 2 && !room.gameStarted) {
+    room.gameStarted = true;
+    room.turn = room.players[0].color;
+    addLog(roomId, "Battle Commenced!", "red");
+    startTimer(roomId, io);
+    io.to(roomId).emit('update-turn', room.turn);
+  }
+}
+
+/**
+ * Handles Dice Rolling Logic including Triple-Six Rule
+ */
+export const rollDice = (socket: Socket, io: Server) => ({ roomId }: { roomId: string }) => {
+  const room = rooms[roomId];
+  if (!room || !room.gameStarted || room.winner) return;
+
+  const player = room.players.find(p => p.id === socket.id);
+  if (!player || room.turn !== player.color || room.diceValue !== null) return;
+
+  const value = Math.ceil(Math.random() * 6);
+
+  // Rule: 3 Consecutive Sixes cancels turn
+  if (value === 6) {
+    room.sixCount++;
+  } else {
+    room.sixCount = 0;
+  }
+
+  if (room.sixCount === 3) {
+    addLog(roomId, `Triple 6! Turn Revoked`, player.color);
+    io.to(roomId).emit('dice-rolled', { color: player.color, value: 6 });
+    setTimeout(() => nextTurn(roomId, io), 1000);
+    return;
+  }
+
+  room.diceValue = value;
+  addLog(roomId, `${player.color} rolled ${value}`, player.color);
+
+  io.to(roomId).emit('dice-rolled', {
+    playerId: socket.id,
+    color: player.color,
+    value: value,
+    logs: room.logs
+  });
+
+  // Auto-Pass: Check if any piece can actually move
+  const currentPositions = room.positions[player.color];
+  const canMove = currentPositions.some(pos => {
+    if (pos === -1) return value === 6; // Needs 6 to exit base
+    return pos + value <= 56; // Cannot overshoot home
+  });
+
+  if (!canMove) {
+    addLog(roomId, `No valid moves for ${player.color}`, player.color);
+    setTimeout(() => nextTurn(roomId, io), 1500);
+  } else {
+    // Restart timer to give user 15s to choose a piece
+    startTimer(roomId, io);
+  }
+}
+
+/**
+ * Handles Piece Movement, Captures, and Win Conditions
+ */
+export const peiceMoved = (socket: Socket, io: Server) => ({ roomId, movedPieceIndex }: { roomId: string; movedPieceIndex: number }) => {
+  const room = rooms[roomId];
+  if (!room || room.winner) return;
+
+  const player = room.players.find(p => p.id === socket.id);
+  if (!player || room.turn !== player.color || !room.diceValue) return;
+
+  const diceValue = room.diceValue;
+  const pieceIdx = Number(movedPieceIndex);
+  const currentPos = room.positions[player.color][pieceIdx];
+
+  // 1. Logic Validation
+  let newPos = -1;
+  if (currentPos === -1) {
+    if (diceValue === 6) newPos = 0;
+    else return;
+  } else {
+    newPos = currentPos + diceValue;
+    if (newPos > 56) return;
+  }
+
+  let extraTurn = false;
+
+  // 2. Clear previous spot if it was on the common path
+  if (currentPos >= 0 && currentPos <= 50) {
+    const oldActualIdx = getActualPathIndex(player.color, currentPos);
+    if (room.placeHolders[oldActualIdx] === `${player.color}-${pieceIdx}`) {
+      room.placeHolders[oldActualIdx] = '';
+    }
+  }
+
+  // 3. Handle Capture Logic (Only on common path 0-50)
+  if (newPos <= 50) {
+    const actualIndex = getActualPathIndex(player.color, newPos);
+    const occupant = room.placeHolders[actualIndex];
+
+    // Safe zone check (Stars/Halt points)
+    if (occupant && !haltIndexes.includes(actualIndex)) {
+      const [oppColor, oppIdxStr] = occupant.split('-');
+      const oppIdx = Number(oppIdxStr);
+
+      if (oppColor !== player.color) {
+        // KILL DETECTED: Reset opponent piece to base
+        room.positions[oppColor as PlayerColor][oppIdx] = -1;
+        addLog(roomId, `${player.color} captured ${oppColor}!`, player.color);
+        extraTurn = true; // Rule: Capturing gives extra turn
+      }
+    }
+
+    // Update placeholder for the new spot
+    room.placeHolders[actualIndex] = `${player.color}-${pieceIdx}`;
+  }
+
+  // 4. Update memory
+  room.positions[player.color][pieceIdx] = newPos;
+
+  // 5. Check Home/Win Condition
+  if (newPos === 56) {
+    addLog(roomId, `${player.color} reached Home!`, player.color);
+    extraTurn = true; // Rule: Reaching home gives extra turn
+
+    const allHome = room.positions[player.color].every((p: number) => p === 56);
+    if (allHome) {
+      room.winner = player.color;
+      addLog(roomId, `Victory for ${player.color}!`, player.color);
+      io.to(roomId).emit('declare-winner', player.color);
       return;
     }
-  
-    const allowedColors = colorSets[currentCount + 1]; // +1 because we are adding one player
-    const usedColors = new Set(playersInRoom.map(p => p.color));
-    const remainingColors = availableColors.find(c => !usedColors.has(c));
-
-    if(!remainingColors){
-      return console.log("No remaining colors");
-    }
-  
-     const player: PlayerData= {
-         id: socket.id,
-        color: remainingColors
-      }
-    playersInRoom.push(player);
-    socket.join(roomId);
-
-    // Tell the joining player their color and the current room state
-    socket.emit('player-joined', {
-      playerColor: player.color,
-      players: playersInRoom,
-    });
-
-    if(playersInRoom.length === 2){
-      const firstPlayer = playersInRoom[Math.floor(Math.random() * playersInRoom.length)]
-
-      room.turn = player.color;
-      room.gameStarted = true;
-
-      io.to(roomId).emit('room-data', {
-      players: playersInRoom,
-      turn: room.turn, // randomly chosen first player
-      });
-    }
   }
 
-  export const rollDice =(socket: Socket , io: Server) => ({ value, roomId }: { value: number; roomId: string }) => {
-    const room = rooms[roomId];
-    const playerData = room.players.find((p) => p.id === socket.id);
-    if (!playerData) return;
-    room.DiceValues = value;
-  
-    io.to(roomId).emit('dice-rolled', {
-      playerId: socket.id,
-      color: playerData.color,
-      value,
-    });
-  
+  // 6. Broadcast Movement
+  io.to(roomId).emit('update-piece', {
+    newPosition: room.positions,
+    logs: room.logs
+  });
+
+  // 7. Turn Routing
+  if (diceValue === 6 || extraTurn) {
+    room.diceValue = null; // Clear dice for next roll
+    addLog(roomId, `Bonus roll for ${player.color}`, player.color);
+    startTimer(roomId, io);
+    // Keep turn on same player
+    io.to(roomId).emit('update-turn', player.color);
+  } else {
+    nextTurn(roomId, io);
   }
+}
 
-  export const peiceMoved =(socket: Socket , io: Server) => ({ roomId, color, movedPieceIndex, newPosition,}: {
-      roomId: string;
-      color: 'red' | 'blue';
-      pieceId: number;
-      movedPieceIndex: string;
-      newPosition: Positions;
-    }) => {
-      if(!roomId){
-      return console.log("No room Id (peice-moved)", roomId);
-    }
-      const room = rooms[roomId];
-      const player = room.players.find( p => p.id != socket.id) 
-      const turn = player?.color
-      const diceValue = room.DiceValues || 0;
-      const peiceIndex = parseInt(movedPieceIndex);
-      console.log("Positions Before", newPosition);
-      console.log("peice to move",color + movedPieceIndex );
-      
-      const position = newPosition[color];
-      position[peiceIndex] += diceValue;
-      newPosition[color] = position;
-
-      // Add position of the peice
-      const step = position[peiceIndex];
-      const start = startingIndexes[color];
-      let actualPos = step + start;
-      if(actualPos > placeHolders.length){
-           actualPos -= placeHolders.length;
-        }
-        
-      console.log("placeHolders[actualPos] =", placeHolders[actualPos]);
-      if(placeHolders[actualPos] != '' && !haltIndexes.includes(actualPos)){
-
-        const info = placeHolders[actualPos].split('-');
-        console.log("Actual Pos", actualPos);
-
-        if(color == info[0]){
-          socket.emit('false-move' , { message : "Peice already present in the place"});
-          return; 
-        }
-          const Oppcolor = info[0] as PlayerColor;
-          const OppIndex = parseInt(info[1]);
-
-          const position = newPosition[Oppcolor];
-          position[OppIndex] = -1;
-          newPosition[Oppcolor] = position;
-        }
-        
-      if(step <= 50 && !haltIndexes.includes(actualPos)) placeHolders[actualPos] =`${color}-${peiceIndex}`;
-      placeHolders[actualPos - diceValue] = '';
-
-      console.log("Positions After", newPosition);
-      console.log("Placeholder", placeHolders);
-      
-      io.to(roomId).emit('update-piece', {
-        players: room.players,
-        turn: room.turn,
-        diceValue: diceValue,
-        peiceIndex,
-        newPosition
-      });
-
-      io.to(roomId).emit('update-turn', turn);
-      console.log("New position");
-
-    }
-
-    export const onDisconect =(socket: Socket , io: Server)=> () => {
-   console.log(`User disconnected: ${socket.id}`);
-
-   for(const roomId in rooms){
-    const room = rooms[roomId];
-    const playerIndex = room.players.findIndex(p => p.id === socket.id);
-
-    if(playerIndex !== -1){
-      const disconnectedPlayer = room.players.splice(playerIndex, 1)[0];
-
-      // If the room is now empty, delete it to free up memory
-      if(room.players.length === 0){
-        delete rooms[roomId];
-        console.log(`Room ${roomId} is empty and has been deleted.`);
-      }
-       else {
-         // Notify remaining players about the departure
-        io.to(roomId).emit('Player-left', {
-          disconnectedColor: disconnectedPlayer.color,
-          players: room.players
-        });
-
-        // Here you might want to add logic to handle a game in progress
-          // (e.g., pause the game, skip the player's turn, or declare a winner)
-      }
-      break; // Player found and handled, exit loop
-    }
-   }
-  };
+export const onDisconect = (socket: Socket, io: Server) => () => {
+  console.log(`User disconnected: ${socket.id}`);
+};

@@ -33,101 +33,65 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
   const [diceValue, setDiceValue] = useState<number | null>(null);
   const [positions, setPositions] = useState<Positions>(initialPositions);
   const [playerColor, setPlayerColor] = useState<'red' | 'blue' | 'green' | 'yellow' | null>(null);
-  const [ falseMove, setFalseMove ] = useState<Boolean | null>(null);
+  const [falseMove, setFalseMove] = useState<Boolean | null>(null);
+  const [selectedPieceIndex, setSelectedPieceIndex] = useState<number | null>(null);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [timerSync, setTimerSync] = useState<any>(null);
 
 
   const connectSocket = (roomId: string) => {
     if (socketRef.current) {
       return;
     }
-   
+
     const sock = io('http://localhost:3001');
 
     socketRef.current = sock;
-    
+
 
     sock.emit('create-or-join', roomId);
     console.log("User enter request sent");
 
-     sock.on('room-data', ({ players, turn }: { players: Player[], turn: PlayerColor, playerColor: PlayerColor }) => {
-      setPlayers(players); 
-      setTurn(turn);       
-     const player = players.find( player => player.id === sock.id);
-     if(player)
-      setPlayerColor(player.color);
-    else {
-      console.log("No player color assigned");
-    }
-    
-      // Initialize all colors, default to [-1, -1, -1, -1]
-      const defaultPositions: { [key in PlayerColor]: number[] } = {
-        red: [-1, -1, -1, -1],
-        green: [-1, -1, -1, -1],
-        yellow: [-1, -1, -1, -1],
-        blue: [-1, -1, -1, -1],
-      };
-    
-      players.forEach((player: { id: string; color: PlayerColor }) => {
-        defaultPositions[player.color] = [0, 0, 0, 0]; // Set to 0s for active players
-      });
-    
-      setPositions(defaultPositions); // ✅ Now fully typed and safe
+    sock.on('room-data', ({ players, turn, logs, positions }) => {
+      setPlayers(players);
+      setTurn(turn);
+      if (logs) setLogs(logs);
+      if (positions) setPositions(positions);
+
+      const player = players.find((player: Player) => player.id === sock.id);
+      if (player) setPlayerColor(player.color);
+      else {
+        console.log("No player color assigned");
+      }
     });
 
-     sock.on('update-piece', ({ newPosition }: { newPosition: Positions}) => {
+    sock.on('update-piece', ({ newPosition, logs }) => {
       console.log("Peice updated", newPosition);
-      setPositions(newPosition); // ✅ Now fully typed and safe
+      if (newPosition) setPositions(newPosition);
+      if (logs) setLogs(logs);
     });
-    
-    
-      
+
+
+
     sock.on('update-turn', (color) => {
       console.log("Turn is ", color);
-        setTurn(color);
-      });
-    
-      sock.on('assign-player', (color: string) => {
-        if (['red', 'green', 'blue', 'yellow'].includes(color)) {
-          setPlayerColor(color as PlayerColor);
-        } else {
-          console.warn(`Received invalid player color: ${color}`);
-        }
-      });
-
-      sock.on('room-full', () => {
-        alert('Room is full. Please try a different room.');
-        sock.disconnect();
-      });
-      
-      
-
-      sock.on('state-update', (updatedPositions: Record<string, number[]>) => {
-      
-        setPositions({
-          red: updatedPositions.red ?? [-1, 10, -1, -1],
-          green: updatedPositions.green ?? [-1, -1, -1, -1],
-          yellow: updatedPositions.yellow ?? [-1, -1, -1, -1],
-          blue: updatedPositions.blue ?? [-1, -1, -1, -1],
-        });
-        
-      });
-      
-
-    sock.on('declare-winner', (id: string) => {
-      setWinner(id);
+      setTurn(color);
+      setDiceValue(null); // Reset dice on turn change
     });
 
-    sock.on('winner', (name: string) => {
-      setWinner(name);
+    sock.on('timer-sync', ({ timeLeft, totalTime }) => {
+      // We can expose this to Board for syncing
+      setTimerSync({ timeLeft, totalTime, start: Date.now() });
     });
 
-    sock.on('dice-rolled', ({ value }) => {
+    sock.on('declare-winner', (color) => {
+      setWinner(color);
+    });
+
+    sock.on('dice-rolled', ({ value, logs }) => {
       setDiceValue(value);
+      if (logs) setLogs(logs);
     });
-
-    sock.on('false-move', ()=>{
-      setFalseMove(true);
-    })
 
     sock.on('disconnect', () => {
       setPlayers([]);
@@ -136,24 +100,12 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
       setPlayerColor(null);
       setDiceValue(null);
       setWinner(null);
+      setLogs([]);
+      setTimerSync(null);
     });
-
-     sock.on('piece-moved', (data : any)=>{
-      const {  playerId, color, pieceId, newPosition } = data;
-      if(!newPosition){
-        return console.log("No new positions");
-      }
-      setPositions(newPosition);
-      console.log("New Positions", newPosition)
-  })
   };
 
-  const disconnectSocket = () => {
-      if (socketRef.current) {
-          socketRef.current.disconnect();
-          socketRef.current = null;
-      }
-  };
+
 
   // Clean up listeners on unmount
   useEffect(() => {
@@ -165,12 +117,12 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
-  
+
 
   return (
     <GameContext.Provider
       value={{
-        socket : socketRef.current,
+        socket: socketRef.current,
         connectSocket,
         players,
         turn,
@@ -183,7 +135,11 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
         roomCode,
         setRoomCode,
         falseMove,
-        setFalseMove
+        setFalseMove,
+        selectedPieceIndex,
+        setSelectedPieceIndex,
+        logs,
+        timerSync
       }}
     >
       {children}
