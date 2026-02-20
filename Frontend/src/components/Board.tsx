@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PlayerColor, useGame } from '../context/GameContext';
-import { basePositions, commonPath, getActualPathIndex, homePath, peiceStack } from '../utils/gameLogic';
+import { basePositions, commonPath, getActualPathIndex, homePath } from '../utils/gameLogic';
 import { BOARD_SIZE, getTileClass, grid } from '../utils/boardStyle';
 import { AnimatePresence, motion } from 'framer-motion';
 import { User, ShieldCheck, Crosshair, Zap } from 'lucide-react';
-import { div } from 'framer-motion/client';
 
 const Board = () => {
   const { turn, positions, playerColor, setSelectedPieceIndex, selectedPieceIndex, timerSync, diceValue } = useGame();

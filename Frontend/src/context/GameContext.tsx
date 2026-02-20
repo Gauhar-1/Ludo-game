@@ -44,7 +44,14 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
-    const sock = io('http://localhost:3001');
+    const SOCKET_URL = import.meta.env.VITE_LUDO_SERVER_URL || 'http://localhost:3001';
+
+    const sock = io(SOCKET_URL, {
+    transports: ['websocket'], 
+    auth: {
+        token: localStorage.getItem('game_token') 
+          }
+    });
 
     socketRef.current = sock;
 

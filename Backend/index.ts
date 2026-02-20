@@ -7,12 +7,10 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    methods: ["GET", "POST"]
   },
 });
-
-
-
 
 
 io.on('connection', (socket) => {
@@ -26,14 +24,8 @@ io.on('connection', (socket) => {
   socket.on( 'piece-moved', peiceMoved(socket, io));
 
 
-  // socket.on('declare-winner', ({ roomId, id }: { roomId: string; id: string }) => {
-  //   const playerData = rooms[roomId]?.find((p) => p.id === id);
-  //   if (playerData) {
-  //     io.to(roomId).emit('winner', { id, color: playerData.color });
-  //   }
-  // });
-
   socket.on('disconnect', onDisconect(socket, io));
 });
 
-server.listen(3001, () => console.log('Server running on http://localhost:3001'));
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

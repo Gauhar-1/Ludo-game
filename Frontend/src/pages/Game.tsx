@@ -65,8 +65,6 @@ const Game = () => {
           {/* Player 1 Slot */}
           <PlayerProfile color="blue" />
 
-          {/* Player 2 Slot */}
-          <PlayerProfile color="yellow" />
 
           {/* If more players, map them or stick to specific slots for fixed 2-player feeling */}
           {/* For dynamic: */}
