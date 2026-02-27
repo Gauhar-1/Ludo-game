@@ -21,7 +21,7 @@ const Dice = () => {
   const movePiece = () => {
     if (isMyTurn && diceValue !== null && selectedPieceIndex !== null) {
       socket.emit('piece-moved', {
-        roomId: roomCode,
+        roomId,
         movedPieceIndex: selectedPieceIndex,
         color: playerColor,
         newPosition: positions

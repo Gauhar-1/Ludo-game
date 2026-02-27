@@ -95,22 +95,22 @@ const Board = () => {
 
      {/* 2. THE BOARD */}
       <div className="relative w-full aspect-square max-h-[80vh] p-1.5 bg-black rounded-2xl border-2 border-white/5 shadow-2xl">
-        <div
-          className="grid w-full h-full border border-black bg-[#08080a]"
-          style={{
-            gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`,
-            gridTemplateRows: `repeat(${BOARD_SIZE}, 1fr)`,
-          }}
-        >
-          {grid.flat().map((type, index) => {
-            const row = Math.floor(index / BOARD_SIZE);
-            const col = index % BOARD_SIZE;
+  <div
+    className="grid w-full h-full border border-black bg-[#08080a] relative"
+    style={{
+      gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`,
+      gridTemplateRows: `repeat(${BOARD_SIZE}, 1fr)`,
+    }}
+  >
+    {grid.flat().map((type, index) => {
+      const row = Math.floor(index / BOARD_SIZE);
+      const col = index % BOARD_SIZE;
             const stackAtThisTile = stackedPieces[`${row}-${col}`] || [];
             const isStacked = stackAtThisTile.length > 1;
 
             return type.startsWith('center-') ? (
               <div key={index} className="relative w-full border border-black bg-black">
-                <div className={`absolute inset-0 opacity-40 ${type.includes('yellow') ? 'bg-amber-600' : type.includes('green') ? 'bg-emerald-700' : type.includes('blue') ? 'bg-blue-700' : 'bg-rose-700'}`} />
+                <div className={`absolute inset-0 opacity-40 ${type.includes('yellow') ? 'bg-amber-600' : type.includes('green') ? 'bg-emerald-100' : type.includes('blue') ? 'bg-blue-700' : 'bg-rose-700'}`} />
               </div>
             ) : (
               <div key={index} className={`relative w-full h-full border-[0.5px] border-black flex items-center justify-center ${getTileClass(type)}`}>

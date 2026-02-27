@@ -9,22 +9,30 @@ import { ShieldCheck, ChevronLeft, Hash, Gamepad2, Settings } from 'lucide-react
 
 
 import WinnerModal from '../components/WinnerModal';
+// import { useLudoBridge } from '../hooks/useLudo';
 
 const Game = () => {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const hasConnected = useRef(false);
-  const { connectSocket, players } = useGame();
+  const urlParams = new URLSearchParams(window.location.search);
+  const myUserId = urlParams.get('userId'); 
+  const myName = decodeURIComponent(urlParams.get('name') || "Player")
+  const { connectSocket, players, isPaused, socket } = useGame();
+  // const { isAuthorizing, error } = useLudoBridge();
 
   useEffect(() => {
     if (roomId && !hasConnected.current) {
       connectSocket(roomId);
       hasConnected.current = true;
     }
-    return () => {
-      // Cleanup handled in context
-    };
   }, [roomId, connectSocket]);
+
+  useEffect(()=>{
+     if(!socket)
+      navigate(`/waiting/${roomId}?userId=${myUserId}&name=${encodeURIComponent(myName)}`) 
+      return;
+  },[socket])
 
   // Identify opponents
   // For 2 player game, usually Blue and Yellow, or Red and Green?
@@ -32,8 +40,37 @@ const Game = () => {
   // We can just iterate players.
   // If waiting for players, show placeholders.
 
+//   if (isAuthorizing) {
+//   return (
+//     <div className="h-screen w-full flex items-center justify-center bg-[#0b0b0d]">
+//       <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-purple-500" />
+//       <p className="ml-4 text-gray-400">Verifying Battle Access...</p>
+//     </div>
+//   );
+// }
+
+// if (error) {
+//   return (
+//     <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0b0b0d] p-6 text-center">
+//       <h2 className="text-2xl font-bold text-red-500 mb-4">Access Denied</h2>
+//       <p className="text-gray-400 mb-6">{error}</p>
+//       <button onClick={() => navigate('/')} className="bg-white/5 px-6 py-2 rounded-xl text-white">
+//         Back to Home
+//       </button>
+//     </div>
+//   );
+// }
+
   return (
     <div className="min-h-screen bg-[#0b0b0d] text-gray-100 font-sans flex flex-col md:flex-row overflow-hidden">
+      {isPaused && (
+       <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md">
+          <div className="text-center p-10 border-2 border-amber-500 rounded-3xl bg-[#111115]">
+             <h2 className="text-amber-500 text-3xl font-black italic">BATTLE PAUSED</h2>
+             <p className="text-gray-400 mt-2">Waiting for commander to return...</p>
+          </div>
+       </div>
+    )}
 
       {/* 1. LEFT SIDEBAR (Desktop) / TOP (Mobile) */}
       <aside className="w-full md:w-80 bg-[#111115] border-r border-white/5 p-6 flex flex-col gap-6 z-20 shadow-2xl">
@@ -62,15 +99,12 @@ const Game = () => {
             </span>
           </div>
 
-          {/* Player 1 Slot */}
-          <PlayerProfile color="blue" />
 
-
-          {/* If more players, map them or stick to specific slots for fixed 2-player feeling */}
-          {/* For dynamic: */}
-          {players.filter((p: any) => p.color !== 'blue' && p.color !== 'yellow').map((p: any) => (
-            <PlayerProfile key={p.id} color={p.color} />
-          ))}
+          <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
+              {players.map((p: any) => (
+                <PlayerProfile key={p.userId} color={p.color} name={p.name} />
+              ))}
+            </div>
         </div>
 
         {/* Settings / Footer */}

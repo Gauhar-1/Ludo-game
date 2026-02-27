@@ -37,9 +37,12 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
   const [selectedPieceIndex, setSelectedPieceIndex] = useState<number | null>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [timerSync, setTimerSync] = useState<any>(null);
+  const [userId,setUserId] = useState<string>("");
+  const [name,setName] = useState<string>("");
+  const [isPaused, setIsPaused] = useState(false);
 
 
-  const connectSocket = (roomId: string) => {
+  const connectSocket = (roomId: string, userId : string, name: string) => {
     if (socketRef.current) {
       return;
     }
@@ -47,30 +50,42 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
     const SOCKET_URL = import.meta.env.VITE_LUDO_SERVER_URL || 'http://localhost:3001';
 
     const sock = io(SOCKET_URL, {
-    transports: ['websocket'], 
-    auth: {
-        token: localStorage.getItem('game_token') 
-          }
+    transports: ["websocket", "polling"], 
+    withCredentials: true
     });
 
     socketRef.current = sock;
 
 
-    sock.emit('create-or-join', roomId);
-    console.log("User enter request sent");
+    sock.on('connect', () => {
+    console.log("Connected with ID:", sock.id);
+    console.log("roomId, userId", roomId, userId)
+    sock.emit('create-or-join', {roomId, userId, name}); 
+    });
 
     sock.on('room-data', ({ players, turn, logs, positions }) => {
-      setPlayers(players);
-      setTurn(turn);
-      if (logs) setLogs(logs);
-      if (positions) setPositions(positions);
+    setPlayers(players);
+    setTurn(turn);
+    if (logs) setLogs(logs);
+    if (positions) setPositions(positions);
 
-      const player = players.find((player: Player) => player.id === sock.id);
-      if (player) setPlayerColor(player.color);
-      else {
-        console.log("No player color assigned");
-      }
-    });
+    const me = players.find((p: any) => p.userId === userId);
+    if (me) setPlayerColor(me.color);
+
+    const allOnline = players.every((p: any) => p.isOnline);
+    if (allOnline) setIsPaused(false);
+  });
+
+  sock.on('game-paused', () => {
+    setIsPaused(true);
+  });
+
+  sock.on('player-status-update', ({ userId: disconnectedId, isOnline }) => {
+    setPlayers(prev => prev.map(p => 
+      p.userId === disconnectedId ? { ...p, isOnline } : p
+    ));
+    if (!isOnline) setIsPaused(true);
+  });
 
     sock.on('update-piece', ({ newPosition, logs }) => {
       console.log("Peice updated", newPosition);
@@ -114,15 +129,20 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
 
 
 
-  // Clean up listeners on unmount
-  useEffect(() => {
+ useEffect(() => {
+  // If you want to connect as soon as the component mounts and you have a roomId
+  if (roomCode && !socketRef.current) {
+    connectSocket(roomCode, userId, name);
+  }
 
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
-  }, []);
+  return () => {
+    if (socketRef.current) {
+      socketRef.current.off(); // Remove all listeners
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+  };
+}, [roomCode]); // Re-run if roomCode changes
 
 
 
@@ -146,7 +166,10 @@ export const GameProvider = ({ children }: { children: React.ReactNode }) => {
         selectedPieceIndex,
         setSelectedPieceIndex,
         logs,
-        timerSync
+        timerSync,
+        setUserId,
+        setName,
+        isPaused
       }}
     >
       {children}

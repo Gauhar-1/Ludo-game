@@ -1,1 +1,1 @@
-{"root":["../index.ts","../controllers/gamecontrollers.ts","../utils/gameset.ts","../utils/type.ts"],"version":"5.9.2"}
+{"root":["../index.ts","../config/db.ts","../controllers/gamecontrollers.ts","../models/game.ts","../services/gameservice.ts","../utils/gameset.ts","../utils/type.ts"],"version":"5.9.2"}

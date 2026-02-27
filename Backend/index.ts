@@ -1,14 +1,28 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { onDisconect, peiceMoved, rollDice, roomCreation } from './controllers/gameControllers';
+import {  handleDisconnect, peiceMoved, rollDice, roomCreation } from './controllers/gameControllers';
+import connectDB from './config/db';
 
 const app = express();
 const server = createServer(app);
+
+connectDB();
+
+const origins = [
+  "http://localhost:4000", 
+  "http://localhost:5173"
+];
+
+if (process.env.FRONTEND_URL) {
+  origins.push(process.env.FRONTEND_URL);
+}
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
-    methods: ["GET", "POST"]
+    origin: origins,
+    methods: ["GET", "POST"],
+    credentials: true
   },
 });
 
@@ -24,7 +38,7 @@ io.on('connection', (socket) => {
   socket.on( 'piece-moved', peiceMoved(socket, io));
 
 
-  socket.on('disconnect', onDisconect(socket, io));
+  socket.on("disconnect", handleDisconnect(socket, io));
 });
 
 const PORT = process.env.PORT || 3001;

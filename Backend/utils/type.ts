@@ -1,3 +1,5 @@
+import { Types } from "mongoose";
+
 export type PlayerColor = 'red' | 'blue' | 'green' | 'yellow';
 
 export type PlayerData = {
@@ -66,4 +68,27 @@ export interface RoomDataPayload {
   logs: GameLog[];
   positions: Positions;
   winner?: PlayerColor | null;
+}
+
+export interface IPlayer {
+  id: string; // Socket ID
+  userId: string;
+  name: string;
+  color: PlayerColor;
+  pieces: number[];
+  isOnline: boolean;
+}
+
+export interface IGame {
+  _id?: Types.ObjectId; 
+  roomId: string;
+  players: IPlayer[];
+  gameStarted: boolean;
+  turn: PlayerColor | null;
+  diceValue: number | null;
+  sixCount: number;
+  positions: Record<PlayerColor, number[]>;
+  logs: any[];
+  winner: PlayerColor | null;
+  placeHolders: string[];
 }
