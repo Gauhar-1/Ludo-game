@@ -61,7 +61,7 @@ const WinnerModal = () => {
 
                             <div className="w-full flex flex-col gap-3 mt-4">
                                 <button
-                                    onClick={() => navigate('/')}
+                                    onClick={() => window.location.href = `${import.meta.env.VITE_TAUJILUDO_URL}/`}
                                     className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase tracking-[0.25em] hover:scale-105 transition-transform flex items-center justify-center gap-2 shadow-xl"
                                 >
                                     <Home size={18} /> Return to Base
