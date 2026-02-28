@@ -1,11 +1,9 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../context/GameContext';
 import { Trophy, Crown, Home } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 
 const WinnerModal = () => {
     const { winner } = useGame();
-    const navigate = useNavigate();
 
     return (
         <AnimatePresence>
