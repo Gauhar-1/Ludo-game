@@ -10,7 +10,7 @@ const WaitingRoom = () => {
   const myUserId = urlParams.get('userId'); 
   const myName = decodeURIComponent(urlParams.get('name') || "Player")
 
-  const { players, connectSocket, socket,setUserId, playerColor, setName } = useGame();
+  const { players, connectSocket, setUserId, playerColor, setName } = useGame();
 
   useEffect(() => {
     // Pass the userId to the connect function

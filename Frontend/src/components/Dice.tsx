@@ -5,8 +5,7 @@ import { Zap, ShieldAlert, Cpu, Swords, RotateCcw } from 'lucide-react';
 
 const Dice = () => {
   const {
-    socket, turn, diceValue, playerColor,
-    roomCode, positions, falseMove, setFalseMove, setSelectedPieceIndex, selectedPieceIndex
+    socket, turn, diceValue, playerColor, positions, falseMove, setFalseMove, setSelectedPieceIndex, selectedPieceIndex
   } = useGame();
   const { roomId } = useParams();
 
